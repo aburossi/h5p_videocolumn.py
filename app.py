@@ -6,9 +6,14 @@ import zipfile
 import io
 import re
 from pathlib import Path
+from enum import Enum
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
+
+class MediaType(Enum):
+    VIDEO = "video"
+    AUDIO = "audio"
 
 # Function to generate a unique UUID
 def generate_uuid():
@@ -183,124 +188,213 @@ def map_true_false(question):
         return {}
 
 
-def create_full_content_structure(questions, youtube_url, title, randomization, pool_size, pass_percentage):
-    """Create the complete content structure with text, video, and questions"""
+def create_full_content_structure(questions, media_url, media_type, title, randomization, pool_size, pass_percentage):
+    """Create the complete H5P content structure with either video or audio"""
     try:
-        # Extract YouTube ID if URL is provided
-        youtube_id = None
-        if youtube_url:
-            match = re.search(r"v=([a-zA-Z0-9_-]{11})", youtube_url)
-            if match:
-                youtube_id = match.group(1)
+        content = []
+
+        # 1. Add Intro Text
+        intro_text = (
+            "<p>Schauen Sie das Video und beantworten Sie die Verständnisfragen unterhalb des Videos</p>"
+            if media_type == "video"
+            else "<p>Hören Sie den Audiobeitrag und beantworten Sie die Verständnisfragen.</p>"
+        )
         
-        return {
-            "content": [
-                # Text Section
-                {
-                    "content": {
-                        "params": {
-                            "text": "<p>Schauen Sie das Video und beantworten Sie die Verständnisfragen unterhalb des Videos</p>"
-                        },
-                        "library": "H5P.AdvancedText 1.1",
-                        "metadata": {
-                            "contentType": "Text",
-                            "license": "U",
-                            "title": "Intro Text",
-                            "authors": [],
-                            "changes": []
-                        },
-                        "subContentId": generate_uuid()
-                    },
-                    "useSeparator": "auto"
+        content.append({
+            "content": {
+                "params": {"text": intro_text},
+                "library": "H5P.AdvancedText 1.1",
+                "metadata": {
+                    "contentType": "Text",
+                    "license": "U",
+                    "title": "Intro Text",
+                    "authors": [],
+                    "changes": []
                 },
-                # Video Section
-                {
-                    "content": {
-                        "params": {
-                            "visuals": {"fit": True, "controls": True},
-                            "playback": {"autoplay": False, "loop": False},
-                            "l10n": {
-                                "name": "Video",
-                                "loading": "Videoplayer lädt...",
-                                # ... (keep all l10n properties from example)
-                            },
-                            "sources": [{
-                                "path": f"https://www.youtube.com/watch?v={youtube_id}" if youtube_id else "",
-                                "mime": "video/YouTube",
-                                "copyright": {"license": "U"},
-                                "aspectRatio": "16:9"
-                            }]
-                        },
-                        "library": "H5P.Video 1.6",
-                        "metadata": {
-                            "contentType": "Video",
-                            "license": "U",
-                            "title": "YouTube Video",
-                            "authors": [],
-                            "changes": [],
-                            "extraTitle": "YouTube Video"
-                        },
-                        "subContentId": generate_uuid()
+                "subContentId": generate_uuid()
+            },
+            "useSeparator": "auto"
+        })
+
+        # 2. Add Media Section
+        if media_type == "video":
+            # Video handling
+            youtube_id = None
+            if media_url:
+                match = re.search(r"v=([a-zA-Z0-9_-]{11})", media_url)
+                if match:
+                    youtube_id = match.group(1)
+
+            media_content = {
+                "params": {
+                    "visuals": {"fit": True, "controls": True},
+                    "playback": {"autoplay": False, "loop": False},
+                    "l10n": {
+                        "name": "Video",
+                        "loading": "Videoplayer lädt...",
+                        "noPlayers": "Keine Videoplayer gefunden, die das vorliegende Videoformat unterstützen.",
+                        "noSources": "Es wurden für das Video keine Quellen angegeben.",
+                        "aborted": "Das Abspielen des Videos wurde abgebrochen.",
+                        "networkFailure": "Netzwerkfehler.",
+                        "cannotDecode": "Dekodierung des Mediums nicht möglich.",
+                        "formatNotSupported": "Videoformat wird nicht unterstützt.",
+                        "mediaEncrypted": "Medium verschlüsselt.",
+                        "unknownError": "Unbekannter Fehler.",
+                        "invalidYtId": "Ungültige YouTube-ID.",
+                        "unknownYtId": "Video mit dieser YouTube-ID konnte nicht gefunden werden.",
+                        "restrictedYt": "Der Besitzer dieses Videos erlaubt kein Einbetten."
                     },
-                    "useSeparator": "auto"
+                    "sources": [{
+                        "path": f"https://www.youtube.com/watch?v={youtube_id}" if youtube_id else "",
+                        "mime": "video/YouTube",
+                        "copyright": {"license": "U"},
+                        "aspectRatio": "16:9"
+                    }]
                 },
-                # Question Set
-                {
-                    "useSeparator": "auto",
-                    "content": {
-                        "library": "H5P.QuestionSet 1.20",
-                        "params": {
-                            "introPage": {
-                                "showIntroPage": True,
-                                "startButtonText": "Quiz starten",
-                                "title": title,
-                                "introduction": f"<p style='text-align:center'><strong>Starten Sie das Quiz zu diesem Videoinhalt.</strong></p><p style='text-align:center'>Es werden zufällig {pool_size} Fragen angezeigt.</p>",
-                                "backgroundImage": {
-                                    "path": "images/file-_jmSDW4b9EawjImv.png",
-                                    "mime": "image/png",
-                                    "copyright": {"license": "U"},
-                                    "width": 52,
-                                    "height": 52
-                                }
-                            },
-                            "progressType": "textual",
-                            "passPercentage": pass_percentage,
-                            "randomQuestions": randomization,
-                            "poolSize": pool_size,
-                            "questions": questions,
-                            # ... (keep other params from example)
-                        },
-                        "metadata": {
-                            "contentType": "Question Set",
-                            "license": "U",
-                            "title": title,
-                            "authors": [],
-                            "changes": []
-                        },
-                        "subContentId": generate_uuid()
-                    }
-                }
-            ]
+                "library": "H5P.Video 1.6",
+                "metadata": {
+                    "contentType": "Video",
+                    "license": "U",
+                    "title": "Video Content",
+                    "authors": [],
+                    "changes": [],
+                    "extraTitle": "Video Content"
+                },
+                "subContentId": generate_uuid()
+            }
+        else:
+            # Audio handling
+            media_content = {
+                "params": {
+                    "playerMode": "full",
+                    "fitToWrapper": False,
+                    "controls": True,
+                    "autoplay": False,
+                    "playAudio": "Audio abspielen",
+                    "pauseAudio": "Audio pausieren",
+                    "contentName": "Audio",
+                    "audioNotSupported": "Dein Browser unterstützt diese Tondatei nicht.",
+                    "files": [{
+                        "path": media_url,
+                        "mime": "audio/mp3",
+                        "copyright": {"license": "U"}
+                    }]
+                },
+                "library": "H5P.Audio 1.5",
+                "metadata": {
+                    "contentType": "Audio",
+                    "license": "U",
+                    "title": "Audio Content",
+                    "authors": [],
+                    "changes": [],
+                    "extraTitle": "Audio Content"
+                },
+                "subContentId": generate_uuid()
+            }
+
+        content.append({
+            "content": media_content,
+            "useSeparator": "auto"
+        })
+
+        # 3. Add Question Set
+        question_set = {
+            "useSeparator": "auto",
+            "content": {
+                "library": "H5P.QuestionSet 1.20",
+                "params": {
+                    "introPage": {
+                        "showIntroPage": True,
+                        "startButtonText": "Quiz starten",
+                        "title": title,
+                        "introduction": f"<p style='text-align:center'><strong>Starten Sie das Quiz zu diesem {'Video' if media_type == 'video' else 'Audio'}inhalt.</strong></p>"
+                                        f"<p style='text-align:center'>Es werden zufällig {pool_size} Fragen angezeigt.</p>",
+                        "backgroundImage": {
+                            "path": "images/file-_jmSDW4b9EawjImv.png",
+                            "mime": "image/png",
+                            "copyright": {"license": "U"},
+                            "width": 52,
+                            "height": 52
+                        }
+                    },
+                    "progressType": "textual",
+                    "passPercentage": pass_percentage,
+                    "disableBackwardsNavigation": True,
+                    "randomQuestions": randomization,
+                    "endGame": {
+                        "showResultPage": True,
+                        "showSolutionButton": True,
+                        "showRetryButton": True,
+                        "noResultMessage": "Quiz beendet",
+                        "message": "Dein Ergebnis:",
+                        "scoreBarLabel": "Du hast @score von @total Punkten erreicht.",
+                        "overallFeedback": [
+                            {"from": 0, "to": 50, "feedback": "Kein Grund zur Sorge! Tipp: Schau dir die Lösungen an, bevor du in die nächste Runde startest."},
+                            {"from": 51, "to": 75, "feedback": "Du weisst schon einiges über das Thema. Mit jeder Wiederholung kannst du dich steigern."},
+                            {"from": 76, "to": 100, "feedback": "Gut gemacht!"}
+                        ],
+                        "solutionButtonText": "Lösung anzeigen",
+                        "retryButtonText": "Nächste Runde",
+                        "finishButtonText": "Beenden",
+                        "submitButtonText": "Absenden",
+                        "showAnimations": False,
+                        "skippable": False,
+                        "skipButtonText": "Video überspringen"
+                    },
+                    "override": {"checkButton": True},
+                    "texts": {
+                        "prevButton": "Zurück",
+                        "nextButton": "Weiter",
+                        "finishButton": "Beenden",
+                        "submitButton": "Absenden",
+                        "textualProgress": "Frage @current von @total",
+                        "jumpToQuestion": "Frage %d von %total",
+                        "questionLabel": "Frage",
+                        "readSpeakerProgress": "Frage @current von @total",
+                        "unansweredText": "Unbeantwortet",
+                        "answeredText": "Beantwortet",
+                        "currentQuestionText": "Aktuelle Frage",
+                        "navigationLabel": "Fragen"
+                    },
+                    "poolSize": pool_size,
+                    "questions": questions
+                },
+                "metadata": {
+                    "contentType": "Question Set",
+                    "license": "U",
+                    "title": title,
+                    "authors": [],
+                    "changes": []
+                },
+                "subContentId": generate_uuid()
+            }
         }
+
+        content.append(question_set)
+
+        return {"content": content}
+
     except Exception as e:
         st.error(f"Error creating content structure: {e}")
+        logging.error(f"Content creation error: {str(e)}")
         return None
-
+    
 # Modified processing function
-def process_input(youtube_url, json_data, template_path, title, randomization, pool_size, pass_percentage, user_image=None):
+def process_input(media_url, media_type, json_data, template_path, title, randomization, pool_size, pass_percentage, user_image=None):
     try:
-        # Map questions
+        # Map questions (same as before)
         questions = []
         for q in json_data.get("questions", []):
             if q["type"] == "MultipleChoice":
                 questions.append(map_multiple_choice(q))
             elif q["type"] == "TrueFalse":
                 questions.append(map_true_false(q))
-        
-        # Create full content structure
+
+        # Create full content structure with MEDIA parameters
         content = create_full_content_structure(
             questions=questions,
-            youtube_url=youtube_url,
+            media_url=media_url,
+            media_type=media_type,  # Add this parameter
             title=title,
             randomization=randomization,
             pool_size=pool_size,
@@ -348,6 +442,7 @@ def create_h5p_package(content_json, template_zip_path, title, user_image_bytes=
                 "mainLibrary": "H5P.Column",
                 "preloadedDependencies": [
                     {"machineName": "H5P.AdvancedText", "majorVersion": 1, "minorVersion": 1},
+                    {"machineName": "H5P.Audio", "majorVersion": 1, "minorVersion": 5},
                     {"machineName": "H5P.Video", "majorVersion": 1, "minorVersion": 6},
                     {"machineName": "H5P.QuestionSet", "majorVersion": 1, "minorVersion": 20},
                     {"machineName": "FontAwesome", "majorVersion": 4, "minorVersion": 5},
@@ -372,7 +467,13 @@ def create_h5p_package(content_json, template_zip_path, title, user_image_bytes=
 
 # Streamlit UI
 def main():
-    st.title("Video Quiz H5P Generator")
+    st.title("Video/Audio Quiz H5P Generator")
+
+    # Media type selection
+    media_type = st.radio("Select media type", [MediaType.VIDEO.value, MediaType.AUDIO.value])
+    
+    # Media URL input
+    media_url = st.text_input(f"{media_type.capitalize()} URL")
     
     # Sidebar for instructions or additional options
     with st.sidebar.expander("Instructions", expanded=False):
@@ -404,7 +505,8 @@ def main():
                 image_bytes = user_image.read() if user_image else None
                 
                 h5p_package = process_input(
-                    youtube_url=youtube_url,
+                    media_url=media_url,  # Changed from youtube_url
+                    media_type=media_type,  # New parameter
                     json_data=json_data,
                     template_path=Path(__file__).parent / "templates" / "col_vid_mc_tf.zip",
                     title=title,
