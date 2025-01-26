@@ -374,9 +374,19 @@ def create_h5p_package(content_json, template_zip_path, title, user_image_bytes=
 def main():
     st.title("Video Quiz H5P Generator")
     
+    # Sidebar for instructions or additional options
+    with st.sidebar.expander("Instructions", expanded=False):
+        st.info("""
+            **Paste JSON:**
+            1. **Paste JSON Content:** Use the text area to paste your JSON data directly.
+                Use [customGPT H5P MF & TF](https://chatgpt.com/g/g-67738981e5e081919b6fc8e93e287453-h5p-mf-tf) to generate the JSON format.
+            2. **Process JSON:** Click the "Create H5P Package" button to transform the pasted JSON.
+            3. **Download H5P File:** After processing, download your `.h5p` package.
+        """)
+
     # Inputs
     youtube_url = st.text_input("YouTube Video URL")
-    questions_json = st.text_area("Paste Question JSON", height=300)
+    questions_json = st.text_area("Paste JSON Content created with [customGPT H5P MF & TF](https://chatgpt.com/g/g-67738981e5e081919b6fc8e93e287453-h5p-mf-tf) below", height=300)
     title = st.text_input("Quiz Title", "Video Quiz")
     
     # Options
