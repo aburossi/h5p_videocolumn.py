@@ -7,6 +7,7 @@ import io
 import re
 from pathlib import Path
 from enum import Enum
+from urllib.parse import urlparse, parse_qs
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -186,7 +187,32 @@ def map_true_false(question):
     except Exception as e:
         st.error(f"Error mapping TrueFalse question: {e}")
         return {}
+        
+def extract_youtube_id(url):
+    """
+    Extracts the YouTube video ID from a given URL.
+    Supports both standard and shortened YouTube URLs.
 
+    Args:
+        url (str): The YouTube URL.
+
+    Returns:
+        str or None: The extracted YouTube ID or None if extraction fails.
+    """
+    try:
+        parsed_url = urlparse(url)
+        if parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
+            # Handle URLs like https://www.youtube.com/watch?v=ID
+            query_params = parse_qs(parsed_url.query)
+            return query_params.get('v', [None])[0]
+        elif parsed_url.hostname in ['youtu.be']:
+            # Handle URLs like https://youtu.be/ID
+            return parsed_url.path.lstrip('/')
+        else:
+            return None
+    except Exception as e:
+        logging.error(f"Error parsing YouTube URL: {e}")
+        return None
 
 def create_full_content_structure(questions, media_url, media_type, title, randomization, pool_size, pass_percentage):
     """Create the complete H5P content structure with either video or audio"""
@@ -219,11 +245,13 @@ def create_full_content_structure(questions, media_url, media_type, title, rando
         # 2. Add Media Section
         if media_type == "video":
             # Video handling
-            youtube_id = None
-            if media_url:
-                match = re.search(r"(?:v=|be\/)([a-zA-Z09_-]{11})", media_url)
-                if match:
-                    youtube_id = match.group(1)
+            youtube_id = extract_youtube_id(media_url)
+            if youtube_id:
+                reconstructed_url = f"https://www.youtube.com/watch?v={youtube_id}"
+                st.success(f"Extracted YouTube ID: {youtube_id}")
+            else:
+                st.error("Invalid YouTube URL format. Please provide a valid YouTube watch or share link.")
+                return {}  # Early exit due to invalid URL
 
             media_content = {
                 "params": {
@@ -245,7 +273,7 @@ def create_full_content_structure(questions, media_url, media_type, title, rando
                         "restrictedYt": "Der Besitzer dieses Videos erlaubt kein Einbetten."
                     },
                     "sources": [{
-                        "path": f"https://www.youtube.com/watch?v={youtube_id}" if youtube_id else "",
+                        "path": reconstructed_url,  # Use the reconstructed standard URL
                         "mime": "video/YouTube",
                         "copyright": {"license": "U"},
                         "aspectRatio": "16:9"
@@ -378,17 +406,24 @@ def create_full_content_structure(questions, media_url, media_type, title, rando
         st.error(f"Error creating content structure: {e}")
         logging.error(f"Content creation error: {str(e)}")
         return None
-    
-# Modified processing function
+
 def process_input(media_url, media_type, json_data, template_path, title, randomization, pool_size, pass_percentage, user_image=None):
     try:
         # Map questions (same as before)
         questions = []
         for q in json_data.get("questions", []):
             if q["type"] == "MultipleChoice":
-                questions.append(map_multiple_choice(q))
+                mapped_q = map_multiple_choice(q)
+                if mapped_q:  # Ensure mapping was successful
+                    questions.append(mapped_q)
             elif q["type"] == "TrueFalse":
-                questions.append(map_true_false(q))
+                mapped_q = map_true_false(q)
+                if mapped_q:  # Ensure mapping was successful
+                    questions.append(mapped_q)
+
+        if not questions:
+            st.error("No valid questions found in the JSON.")
+            return None
 
         # Create full content structure with MEDIA parameters
         content = create_full_content_structure(
@@ -401,6 +436,10 @@ def process_input(media_url, media_type, json_data, template_path, title, random
             pass_percentage=pass_percentage
         )
         
+        if not content:
+            st.error("Failed to create content structure.")
+            return None
+
         # Create in-memory H5P package
         return create_h5p_package(
             content_json=json.dumps(content, ensure_ascii=False),
@@ -412,7 +451,6 @@ def process_input(media_url, media_type, json_data, template_path, title, random
         st.error(f"Processing error: {e}")
         return None
 
-# Modified H5P package creation
 def create_h5p_package(content_json, template_zip_path, title, user_image_bytes=None):
     try:
         with open(template_zip_path, "rb") as f:
@@ -463,6 +501,7 @@ def create_h5p_package(content_json, template_zip_path, title, user_image_bytes=
         return mem_zip.getvalue()
     except Exception as e:
         st.error(f"Package creation failed: {e}")
+        logging.error(f"Package creation error: {str(e)}")
         return None
 
 # Streamlit UI
@@ -471,10 +510,10 @@ def main():
 
     # Media type selection
     media_type = st.radio("Select media type", [MediaType.VIDEO.value, MediaType.AUDIO.value])
-    
+
     # Media URL input
     media_url = st.text_input(f"{media_type.capitalize()} URL")
-    
+
     # Sidebar for instructions or additional options
     with st.sidebar.expander("Instructions", expanded=False):
         st.info("""
@@ -486,10 +525,9 @@ def main():
         """)
 
     # Inputs
-    youtube_url = st.text_input("YouTube Video URL")
     questions_json = st.text_area("Paste JSON Content created with [customGPT H5P MF & TF](https://chatgpt.com/g/g-67738981e5e081919b6fc8e93e287453-h5p-mf-tf) below", height=300)
     title = st.text_input("Quiz Title", "Video Quiz")
-    
+
     # Options
     with st.sidebar:
         st.header("Settings")
@@ -497,16 +535,16 @@ def main():
         pool_size = st.slider("Questions per Round", 1, 20, 7)
         pass_percentage = st.slider("Passing Percentage", 50, 100, 75)
         user_image = st.file_uploader("Title Image", type=["png", "jpg"])
-    
+
     if st.button("Generate H5P"):
         if questions_json:
             try:
                 json_data = json.loads(questions_json)
                 image_bytes = user_image.read() if user_image else None
-                
+
                 h5p_package = process_input(
-                    media_url=media_url,  # Changed from youtube_url
-                    media_type=media_type,  # New parameter
+                    media_url=media_url,  # Use media_url based on media_type
+                    media_type=media_type,  # Pass media_type
                     json_data=json_data,
                     template_path=Path(__file__).parent / "templates" / "col_vid_mc_tf.zip",
                     title=title,
@@ -515,7 +553,7 @@ def main():
                     pass_percentage=pass_percentage,
                     user_image=image_bytes
                 )
-                
+
                 if h5p_package:
                     st.download_button(
                         label="Download H5P",
@@ -527,6 +565,8 @@ def main():
                 st.error("Invalid JSON format")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
+        else:
+            st.error("Please provide the JSON content for the questions.")
 
 if __name__ == "__main__":
     main()
