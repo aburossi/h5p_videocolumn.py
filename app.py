@@ -221,7 +221,7 @@ def create_full_content_structure(questions, media_url, media_type, title, rando
             # Video handling
             youtube_id = None
             if media_url:
-                match = re.search(r"v=([a-zA-Z0-9_-]{11})", media_url)
+                match = re.search(r"(?:v=|be\/)([a-zA-Z09_-]{11})", media_url)
                 if match:
                     youtube_id = match.group(1)
 
