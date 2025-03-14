@@ -20,6 +20,18 @@ class MediaType(Enum):
 def generate_uuid():
     return str(uuid.uuid4())
 
+def substitute_sharp_s(text: str) -> str:
+    """
+    Replaces all occurrences of 'ß' with 'ss' in the provided text.
+    
+    Args:
+        text (str): The input string.
+    
+    Returns:
+        str: The modified string with 'ß' replaced by 'ss'.
+    """
+    return text.replace('ß', 'ss')
+
 # Function to map MultipleChoice questions to H5P format
 def map_multiple_choice(question):
     try:
@@ -463,6 +475,7 @@ def create_h5p_package(content_json, template_zip_path, title, user_image_bytes=
                 zout.writestr(item, zin.read(item.filename))
             
             # Add content.json
+            content_json = substitute_sharp_s(content_json)
             zout.writestr("content/content.json", content_json.encode("utf-8"))
             
             # Add image if provided
